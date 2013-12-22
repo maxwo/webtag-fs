@@ -9,7 +9,7 @@ create_url(struct Connection *connection, char *destination, const char *uri) {
 void
 init_request(struct Connection *connection, struct Request *request, const char *uri, const unsigned short data_type) {
 	
-	printf("INIT REQUEST\n");
+	printf("INIT REQUEST %s\n", uri);
 	
     size_t url_len = strlen(connection->domain);
     url_len += strlen(uri);
@@ -48,14 +48,34 @@ init_response(struct Response *response, struct Request *request) {
 	response->size = 0;
 }
 
+size_t
+read_response(struct Response *response, char *buf, size_t size, off_t offset) {
+	FILE *f;
+	size_t read;
+	if ( response->data_type==DATA_TYPE_MEMORY ) {
+		memcpy(buf, response->data + offset, size);
+		read = size;
+	} else {
+		f = fopen(response->data, "r");
+		fseek(f, offset, SEEK_SET);
+		read = fread(buf, size, 1, f);
+		fclose(f);
+	}
+	
+	return read;
+}
+
 void
 destroy_response(struct Response *response) {
 		
 	printf("DESTROY RESPONSE\n");
 	
+	if ( response->data_type==DATA_TYPE_FILE ) {
+		unlink(response->data);
+	}
+	
 	free(response->url);
 	free(response->data);
-	//TODO remove file
 }
 
 size_t
@@ -115,7 +135,7 @@ save_cache(struct Connection *connection, struct Response *response) {
 int
 process_request(struct Connection *connection, struct Request *request) {
 	
-	printf("PROCESS REQUEST\n");
+	printf("PROCESS REQUEST %s\n", request->url);
 
     CURL *curl_handle;
     CURLcode res;
@@ -144,6 +164,7 @@ process_request(struct Connection *connection, struct Request *request) {
 	    wcs.file = fopen (response->data,"w");
     } else if ( request->data_type==DATA_TYPE_MEMORY ) {
         response->data = malloc(1);
+		*(response->data) = 0;
     }
 
 	wcs.request = request;

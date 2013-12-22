@@ -58,6 +58,9 @@ void
 
 void
 	init_response(struct Response *response, struct Request *request);
+	
+size_t
+	read_response(struct Response *response, char *buf, size_t size, off_t offset);
 
 void
 	destroy_response(struct Response *response);
