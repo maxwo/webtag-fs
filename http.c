@@ -3,18 +3,21 @@
 void
 create_url(struct Connection *connection, char *destination, const char *uri) {
     char *end = stpcpy(destination, connection->domain);
-    strcpy(end, uri);
+	if ( *(end-1)=='/' && *uri=='/' )
+    	strcpy(end, uri+1);
+	else
+	    strcpy(end, uri);
 }
 
 void
 init_request(struct Connection *connection, struct Request *request, const char *uri, const unsigned short data_type) {
 	
-	printf("INIT REQUEST %s\n", uri);
 	
     size_t url_len = strlen(connection->domain);
+
+	printf("INIT REQUEST %s\n", uri);
     url_len += strlen(uri);
-    request->url = malloc(url_len+1);
-	//syslog (LOG_INFO, "Request initialization %us for %s", data_type, uri);
+    request->url = malloc(sizeof(char) * (url_len+1));
     create_url(connection, request->url, uri);
     
     request->data_type = data_type;
@@ -28,7 +31,6 @@ destroy_request(struct Request *request) {
 	
     free(request->url);
 	
-	// Not cached
 	if ( request->status==REQUEST_STATUS_ERROR ) {
 		destroy_response(request->response);
 		free(request->response);
@@ -38,10 +40,9 @@ destroy_request(struct Request *request) {
 void
 init_response(struct Response *response, struct Request *request) {	
 	
-	printf("INIT RESPONSE\n");
-	
 	int url_len = strlen(request->url);
-	response->url = malloc(sizeof(char) * url_len);
+	
+	response->url = malloc(sizeof(char) * (url_len+1));
 	strcpy(response->url, request->url);
 	response->http_status = 0;
 	response->data_type = request->data_type;
@@ -50,8 +51,10 @@ init_response(struct Response *response, struct Request *request) {
 
 size_t
 read_response(struct Response *response, char *buf, size_t size, off_t offset) {
+	
 	FILE *f;
 	size_t read;
+	
 	if ( response->data_type==DATA_TYPE_MEMORY ) {
 		memcpy(buf, response->data + offset, size);
 		read = size;
@@ -69,7 +72,6 @@ void
 destroy_response(struct Response *response) {
 		
 	printf("DESTROY RESPONSE\n");
-	
 	if ( response->data_type==DATA_TYPE_FILE ) {
 		unlink(response->data);
 	}
@@ -79,19 +81,20 @@ destroy_response(struct Response *response) {
 }
 
 size_t
-write_callback(void *data, size_t size, size_t nmemb, void *user) {	
-	printf("WRITE CALLBACK\n");
+write_callback(void *data, size_t size, size_t nmemb, void *user) {
+	
     size_t realsize = size * nmemb;
     struct WriteCallbackStruct *wcs = (struct WriteCallbackStruct *)user;
 	
 	if ( wcs->request->data_type==DATA_TYPE_MEMORY ) {
 		
-	    wcs->response->data = realloc(wcs->response->data, wcs->response->size+realsize);
+	    wcs->response->data = realloc(wcs->response->data, wcs->response->size+realsize+1);
 	    if (wcs->response->data == NULL) {
 	        return -1;
 	    }
 	    memcpy(&(wcs->response->data[wcs->response->size]), data, realsize);
 	    wcs->response->size += realsize;
+		*(wcs->response->data + wcs->response->size) = 0;
 		return realsize;
 	
 	} else if ( wcs->request->data_type==DATA_TYPE_FILE ) {
@@ -107,9 +110,9 @@ write_callback(void *data, size_t size, size_t nmemb, void *user) {
 int
 check_cache(struct Connection *connection, struct Request *request) {
 	
-	printf("CHECK CACHE\n");
-	
 	struct Cache *current = connection->cache;
+	
+	printf("CHECK CACHE\n");
 	while ( current!=0 ) {
 		if ( !strcmp(request->url, current->response->url) ) {
 			request->response = current->response;
@@ -123,20 +126,20 @@ check_cache(struct Connection *connection, struct Request *request) {
 void
 save_cache(struct Connection *connection, struct Response *response) {
 	
-	printf("SAVE CACHE\n");
-
 	struct Cache *cache;
+	printf("SAVE CACHE\n");
 	cache = malloc(sizeof(struct Cache));
 	cache->response = response;
 	cache->next = connection->cache;
 	connection->cache = cache;
+	
 }
 
 int
 process_request(struct Connection *connection, struct Request *request) {
 	
 	printf("PROCESS REQUEST %s\n", request->url);
-
+	
     CURL *curl_handle;
     CURLcode res;
 	struct WriteCallbackStruct wcs;
@@ -155,10 +158,8 @@ process_request(struct Connection *connection, struct Request *request) {
 	
 	request->status = REQUEST_STATUS_PROCESSING;
 	
-	printf("INITIALIZING DATA\n");
-	
     if ( request->data_type==DATA_TYPE_FILE ) {
-        response->data = malloc(strlen(TMP_FILE_TEMPLATE));
+        response->data = malloc((sizeof(char)) * (strlen(TMP_FILE_TEMPLATE)+1));
         strcpy(response->data, TMP_FILE_TEMPLATE);
         mkstemp(response->data);
 	    wcs.file = fopen (response->data,"w");
@@ -171,10 +172,8 @@ process_request(struct Connection *connection, struct Request *request) {
 	wcs.response = response;
 	
 	printf("LAUNCHING REQUEST\n");
-
-    curl_global_init(CURL_GLOBAL_ALL);
     curl_handle = curl_easy_init();
-
+	
     curl_easy_setopt(curl_handle, CURLOPT_URL, request->url);
     curl_easy_setopt(curl_handle, CURLOPT_FAILONERROR, 1L);
     curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 0L);
@@ -188,7 +187,7 @@ process_request(struct Connection *connection, struct Request *request) {
     }
 
     curl_easy_cleanup(curl_handle);
-    curl_global_cleanup();
+
 
 	response->http_status = res;
 	request->response = response;
@@ -205,7 +204,10 @@ process_request(struct Connection *connection, struct Request *request) {
 
 void
 init_connection(struct Connection *connection, const char *domain) {
+	
 	size_t domain_len = strlen(domain);
+	
+    curl_global_init(CURL_GLOBAL_ALL);
 	connection->domain = malloc(sizeof(char) * domain_len);
 	connection->cache = 0;
 	strcpy(connection->domain, domain);
@@ -213,8 +215,11 @@ init_connection(struct Connection *connection, const char *domain) {
 
 void
 destroy_connection(struct Connection *connection) {
+	
 	struct Cache *current = connection->cache;
 	struct Cache *next = 0;
+	
+    curl_global_cleanup();
 	while ( current ) {
 		next = current->next;
 		destroy_response(current->response);

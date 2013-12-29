@@ -10,6 +10,7 @@
 
 const unsigned short DATA_TYPE_MEMORY = 1;
 const unsigned short DATA_TYPE_FILE = 2;
+const unsigned short DATA_TYPE_JSON = 3;
 
 const unsigned short REQUEST_STATUS_INITIALIZED = 1;
 const unsigned short REQUEST_STATUS_PROCESSING = 2;
